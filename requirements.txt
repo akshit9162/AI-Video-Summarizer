@@ -9,3 +9,8 @@ opencv-python
 numpy
 Pillow
 scenedetect
+fastapi
+uvicorn
+langchain
+langchain-openai
+requests

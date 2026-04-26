@@ -1,16 +1,10 @@
-import os
-import sys
-import tempfile
 import time
 
-from celery.result import AsyncResult
+import requests
 import streamlit as st
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from celery_app import celery_app
-from tasks import summarize_video_task
-
 st.title("🎬 AI Video Summarizer")
+API_BASE = st.sidebar.text_input("FastAPI URL", value="http://localhost:8000").rstrip("/")
 
 if "task_id" not in st.session_state:
     st.session_state.task_id = None
@@ -24,12 +18,8 @@ source_value = None
 if opt == "Upload":
     f = st.file_uploader("Upload", type=["mp4"])
     if f:
-        os.makedirs("uploads", exist_ok=True)
-        upload_path = os.path.join("uploads", f"{next(tempfile._get_candidate_names())}.mp4")
-        with open(upload_path, "wb") as fp:
-            fp.write(f.read())
         source_type = "upload"
-        source_value = upload_path
+        source_value = f
 else:
     url = st.text_input("YouTube URL")
     if url:
@@ -46,14 +36,39 @@ if st.button("Run"):
     if not source_type or not source_value:
         st.error("Please provide a valid input video source.")
         st.stop()
-    task = summarize_video_task.delay(source_type, source_value, ratio / 100.0)
-    st.session_state.task_id = task.id
-    st.session_state.task_result = None
+    try:
+        if source_type == "upload":
+            files = {"file": (source_value.name, source_value.getvalue(), "video/mp4")}
+            resp = requests.post(
+                f"{API_BASE}/summarize/upload",
+                files=files,
+                params={"ratio": ratio / 100.0},
+                timeout=120,
+            )
+        else:
+            resp = requests.post(
+                f"{API_BASE}/summarize/youtube",
+                json={"url": source_value, "ratio": ratio / 100.0},
+                timeout=30,
+            )
+        resp.raise_for_status()
+        st.session_state.task_id = resp.json()["task_id"]
+        st.session_state.task_result = None
+    except requests.RequestException as exc:
+        st.error(f"Failed to start job via FastAPI: {exc}")
+        st.stop()
 
 if st.session_state.task_id:
-    task_result = AsyncResult(st.session_state.task_id, app=celery_app)
-    state = task_result.state
-    meta = task_result.info if isinstance(task_result.info, dict) else {}
+    try:
+        status_resp = requests.get(f"{API_BASE}/tasks/{st.session_state.task_id}", timeout=20)
+        status_resp.raise_for_status()
+        data = status_resp.json()
+    except requests.RequestException as exc:
+        st.error(f"Failed to fetch job status from FastAPI: {exc}")
+        st.stop()
+
+    state = data.get("state", "PENDING")
+    meta = data.get("meta", {}) if isinstance(data.get("meta", {}), dict) else {}
     progress = int(meta.get("progress", 0))
     stage = meta.get("stage", state)
 
@@ -71,12 +86,12 @@ if st.session_state.task_id:
     status_text.info(f"Job status: {state} | {stage}")
 
     if state == "SUCCESS":
-        res = task_result.get()
+        res = data.get("result", {})
         st.session_state.task_result = res
         st.session_state.task_id = None
         status_text.success("Job complete")
     elif state in {"FAILURE", "REVOKED"}:
-        st.error(f"Job failed: {task_result.result}")
+        st.error(f"Job failed: {data.get('error', 'Unknown error')}")
         st.session_state.task_id = None
     else:
         time.sleep(2)

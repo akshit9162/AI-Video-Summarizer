@@ -9,6 +9,7 @@ celery_app = Celery(
     "video_summarization",
     broker=REDIS_URL,
     backend=REDIS_URL,
+    include=["tasks"],
 )
 
 celery_app.conf.update(
@@ -20,8 +21,11 @@ celery_app.conf.update(
     enable_utc=True,
     broker_connection_retry_on_startup=True,
     worker_prefetch_multiplier=1,
-    worker_max_tasks_per_child=int(os.environ.get("CELERY_MAX_TASKS_PER_CHILD", "1")),
 )
+
+max_tasks_per_child = os.environ.get("CELERY_MAX_TASKS_PER_CHILD")
+if max_tasks_per_child:
+    celery_app.conf.worker_max_tasks_per_child = int(max_tasks_per_child)
 
 # On macOS, prefork + heavy ML/video libs can crash workers with SIGABRT.
 # Default to solo unless the user explicitly overrides via env vars.
