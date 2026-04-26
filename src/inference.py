@@ -1,5 +1,6 @@
 import os
 import shutil
+import tempfile
 import torch
 from src.video_utils import *
 from src.env import VideoSummarizationEnv
@@ -8,7 +9,7 @@ from src.scene_detection import detect_scenes
 from src.visualize import create_summary
 from src.highlight_vis import plot_highlights
 from src.evaluate import evaluate
-from src.speech_summary import speech_summary
+from src.speech_summary import speech_transcript
 
 FFMPEG = os.environ.get("FFMPEG_PATH") or shutil.which("ffmpeg")
 DEFAULT_CHECKPOINT = "checkpoints/policies.pt"
@@ -87,7 +88,7 @@ def run_inference(
     scenes = detect_scenes(video)
     fmap = map_frames(total,len(frames))
 
-    temp="temp.mp4"
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
     _progress(0.85, "Creating summary video")
     written = create_summary(video, fmap, env.selected_idx, scenes, temp, fps, maxf)
     if written == 0:
@@ -99,14 +100,18 @@ def run_inference(
         f'-map 0:a -map 1:v -shortest "{output}"'
     )
     if os.system(ffmpeg_cmd) != 0:
+        if os.path.exists(temp):
+            os.remove(temp)
         raise RuntimeError("ffmpeg merge failed while creating summary output.")
 
-    _progress(0.96, "Generating speech summary")
-    speech = speech_summary(video)
+    _progress(0.96, "Generating speech transcript")
+    speech = speech_transcript(video)
     print("Metrics:", evaluate(feats, imp, env.selected_idx))
 
     _progress(0.99, "Preparing highlights")
     plot_path = plot_highlights(imp, env.selected_idx)
+    if os.path.exists(temp):
+        os.remove(temp)
     _progress(1.0, "Done")
 
-    return {"video": output, "plot": plot_path, "speech_summary": speech}
+    return {"video": output, "plot": plot_path, "speech_transcript": speech}

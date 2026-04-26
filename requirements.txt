@@ -1,0 +1,11 @@
+celery
+redis
+faster-whisper
+streamlit
+yt-dlp
+transformers
+torch
+opencv-python
+numpy
+Pillow
+scenedetect
