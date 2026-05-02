@@ -2,13 +2,16 @@ import os
 import re
 from typing import Dict
 
+from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
 
+load_dotenv()
+
 try:
-    from langchain_openai import ChatOpenAI
-except Exception:  # pragma: no cover - optional runtime dependency path
-    ChatOpenAI = None
+    from langchain_anthropic import ChatAnthropic
+except Exception:
+    ChatAnthropic = None
 
 
 def _normalize_text(text: str) -> str:
@@ -25,7 +28,7 @@ def _extractive_summary(text: str, sentence_limit: int = 3) -> str:
 
 
 def _build_llm_chain():
-    if ChatOpenAI is None or not os.getenv("OPENAI_API_KEY"):
+    if ChatAnthropic is None or not os.getenv("ANTHROPIC_API_KEY"):
         return None
 
     prompt = ChatPromptTemplate.from_messages(
@@ -37,7 +40,7 @@ def _build_llm_chain():
             ("human", "Transcript:\n{transcript}\n\nReturn a 3-5 bullet summary."),
         ]
     )
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
+    llm = ChatAnthropic(model="claude-haiku-4-5-20251001", temperature=0.2, max_tokens=512)
     return prompt | llm | RunnableLambda(lambda msg: msg.content.strip())
 
 

@@ -1,0 +1,29 @@
+# environment
+.env
+
+# caches
+.cache/
+
+# job artifacts
+uploads/
+outputs/
+temp*.mp4
+
+# model checkpoints
+checkpoints/
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# celery
+dump.rdb
+
+# editor
+.DS_Store
+.vscode/
+.idea/

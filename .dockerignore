@@ -1,0 +1,36 @@
+# secrets
+.env
+
+# runtime data (mounted as volumes)
+.cache/
+uploads/
+outputs/
+
+# large binaries mounted as volume
+checkpoints/
+
+# build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# celery state
+dump.rdb
+
+# test artifacts
+.pytest_cache/
+.coverage
+
+# editor / OS
+.DS_Store
+.vscode/
+.idea/
+
+# leftover video artifacts
+temp*.mp4
+summary.mp4
+highlights.png
+viz.html

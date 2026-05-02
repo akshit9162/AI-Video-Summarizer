@@ -1,4 +1,4 @@
-import time
+import json
 
 import requests
 import streamlit as st
@@ -10,6 +10,8 @@ if "task_id" not in st.session_state:
     st.session_state.task_id = None
 if "task_result" not in st.session_state:
     st.session_state.task_result = None
+if "video_hash" not in st.session_state:
+    st.session_state.video_hash = None
 
 opt = st.radio("Input:", ["Upload", "YouTube"])
 source_type = None
@@ -60,42 +62,48 @@ if st.button("Run"):
 
 if st.session_state.task_id:
     try:
-        status_resp = requests.get(f"{API_BASE}/tasks/{st.session_state.task_id}", timeout=20)
-        status_resp.raise_for_status()
-        data = status_resp.json()
+        with requests.get(
+            f"{API_BASE}/tasks/{st.session_state.task_id}/stream",
+            stream=True,
+            timeout=(5, 620),
+        ) as stream_resp:
+            stream_resp.raise_for_status()
+            for raw_line in stream_resp.iter_lines():
+                if not raw_line or not raw_line.startswith(b"data: "):
+                    continue
+                payload = json.loads(raw_line[6:])
+                state = payload.get("state", "PENDING")
+                progress = int(payload.get("progress", 0))
+                stage = payload.get("stage", state)
+
+                if progress <= 35:
+                    download_bar.progress(progress, text=f"Download progress: {progress}%")
+                    summarize_bar.progress(0, text="Summarization progress: waiting")
+                else:
+                    download_bar.progress(100, text="Download progress: complete")
+                    summarize_pct = int((progress - 35) / 65 * 100)
+                    summarize_bar.progress(
+                        max(0, min(100, summarize_pct)),
+                        text=f"Summarization progress: {stage}",
+                    )
+
+                status_text.info(f"Job status: {state} | {stage}")
+
+                if state == "SUCCESS":
+                    res = payload.get("result", {})
+                    st.session_state.task_result = res
+                    st.session_state.video_hash = res.get("video_hash", "")
+                    st.session_state.task_id = None
+                    status_text.success("Job complete")
+                    st.rerun()
+                    break
+                elif state in {"FAILURE", "REVOKED", "TIMEOUT"}:
+                    st.error(f"Job failed: {payload.get('error', 'Unknown error')}")
+                    st.session_state.task_id = None
+                    break
     except requests.RequestException as exc:
-        st.error(f"Failed to fetch job status from FastAPI: {exc}")
-        st.stop()
-
-    state = data.get("state", "PENDING")
-    meta = data.get("meta", {}) if isinstance(data.get("meta", {}), dict) else {}
-    progress = int(meta.get("progress", 0))
-    stage = meta.get("stage", state)
-
-    if progress <= 35:
-        download_bar.progress(progress, text=f"Download progress: {progress}%")
-        summarize_bar.progress(0, text="Summarization progress: waiting")
-    else:
-        download_bar.progress(100, text="Download progress: complete")
-        summarize_pct = int((progress - 35) / 65 * 100)
-        summarize_bar.progress(
-            max(0, min(100, summarize_pct)),
-            text=f"Summarization progress: {stage}",
-        )
-
-    status_text.info(f"Job status: {state} | {stage}")
-
-    if state == "SUCCESS":
-        res = data.get("result", {})
-        st.session_state.task_result = res
+        st.error(f"Stream connection failed: {exc}")
         st.session_state.task_id = None
-        status_text.success("Job complete")
-    elif state in {"FAILURE", "REVOKED"}:
-        st.error(f"Job failed: {data.get('error', 'Unknown error')}")
-        st.session_state.task_id = None
-    else:
-        time.sleep(2)
-        st.rerun()
 
 if st.session_state.task_result:
     res = st.session_state.task_result
@@ -104,3 +112,36 @@ if st.session_state.task_result:
     if res.get("speech_transcript"):
         st.subheader("Speech Transcript")
         st.write(res["speech_transcript"])
+
+if st.session_state.video_hash:
+    st.divider()
+    st.subheader("Ask this video")
+    question = st.text_input("Question", placeholder="What is this video about?")
+    if st.button("Ask") and question.strip():
+        with st.spinner("Searching transcript..."):
+            try:
+                resp = requests.post(
+                    f"{API_BASE}/rag/query",
+                    json={"video_hash": st.session_state.video_hash, "question": question},
+                    timeout=60,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            except requests.RequestException as exc:
+                st.error(f"RAG query failed: {exc}")
+                data = {}
+
+        if data.get("answer"):
+            st.markdown(f"**Answer:** {data['answer']}")
+
+        sources = data.get("sources", [])
+        if sources:
+            st.markdown("**Sources from transcript:**")
+            video_path = (st.session_state.task_result or {}).get("video")
+            for src in sources:
+                with st.expander(f"{src['timestamp_str']}"):
+                    st.write(src["text"])
+                    if video_path:
+                        st.video(video_path, start_time=int(src["start"]))
+        elif not data.get("answer"):
+            st.info("No relevant segments found.")

@@ -69,6 +69,7 @@ def summarize_video_task(self, source_type, source_value, ratio=0.2):
             "video": result["video"],
             "plot": result["plot"],
             "speech_transcript": result.get("speech_transcript", ""),
+            "video_hash": result.get("video_hash", ""),
         }
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)

@@ -9,7 +9,8 @@ from src.scene_detection import detect_scenes
 from src.visualize import create_summary
 from src.highlight_vis import plot_highlights
 from src.evaluate import evaluate
-from src.speech_summary import speech_transcript
+from src.speech_summary import speech_transcript_with_meta
+import time
 
 FFMPEG = os.environ.get("FFMPEG_PATH") or shutil.which("ffmpeg")
 DEFAULT_CHECKPOINT = "checkpoints/policies.pt"
@@ -105,7 +106,7 @@ def run_inference(
         raise RuntimeError("ffmpeg merge failed while creating summary output.")
 
     _progress(0.96, "Generating speech transcript")
-    speech = speech_transcript(video)
+    speech, video_hash, _ = speech_transcript_with_meta(video)
     print("Metrics:", evaluate(feats, imp, env.selected_idx))
 
     _progress(0.99, "Preparing highlights")
@@ -114,4 +115,4 @@ def run_inference(
         os.remove(temp)
     _progress(1.0, "Done")
 
-    return {"video": output, "plot": plot_path, "speech_transcript": speech}
+    return {"video": output, "plot": plot_path, "speech_transcript": speech, "video_hash": video_hash}
